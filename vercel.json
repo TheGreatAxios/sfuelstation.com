@@ -3,7 +3,7 @@
     "crons": [
       {
         "path": "/api/cron/monitor-and-fill",
-        "schedule": "* * * * *"
+        "schedule": "0 0 * * *"
       }
     ]
   }
