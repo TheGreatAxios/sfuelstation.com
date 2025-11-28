@@ -103,33 +103,49 @@ export default function BalanceDisplay({
 				: balanceNum.toFixed(5);
 		}
 
+		const chainName = chainConfig.name.replace(" Innovation Hub", "").replace(" DeFi & Liquidity Hub", "").replace(" Gaming Hub", "").replace(" AI Hub", "");
+		const statusText = claimStatus === "claiming" 
+			? "Claiming in progress" 
+			: claimStatus === "success" 
+			? "Claim successful" 
+			: claimStatus === "error" 
+			? "Claim failed" 
+			: "Not claimed";
+
 		return (
 			<tr key={chainConfig.chainKey} className="border-b border-[black]/10 last:border-0">
 				<td className="py-1.5 px-2 text-[10px] sm:text-xs text-[black] font-medium">
-					{chainConfig.name.replace(" Innovation Hub", "").replace(" DeFi & Liquidity Hub", "").replace(" Gaming Hub", "").replace(" AI Hub", "")}
+					{chainName}
 				</td>
-				<td className="py-1.5 px-2 text-[10px] sm:text-xs text-[black] text-right">
+				<td className="py-1.5 px-2 text-[10px] sm:text-xs text-[black] text-right" aria-label={`Balance for ${chainName}`}>
 					{balanceText && `${balanceText} sFUEL`}
+					{!balanceText && balanceStatus === "loading" && (
+						<span className="sr-only">Loading balance</span>
+					)}
+					{!balanceText && balanceStatus === "error" && (
+						<span className="sr-only">Error loading balance</span>
+					)}
 				</td>
-				<td className="py-1.5 px-2 text-[10px] sm:text-xs text-center">
-					{statusIcon}
+				<td className="py-1.5 px-2 text-[10px] sm:text-xs text-center" aria-label={`${chainName} claim status: ${statusText}`}>
+					<span aria-hidden="true">{statusIcon}</span>
+					<span className="sr-only">{statusText}</span>
 				</td>
 			</tr>
 		);
 	};
 
 	return (
-		<div className="mt-4 w-full">
+		<section className="mt-4 w-full" aria-label="sFUEL balance information">
 			{/* Mainnet Chains */}
 			<div className="mb-3">
-				<p className="text-[10px] sm:text-xs text-[black] font-bold mb-1.5 opacity-70">Mainnet</p>
+				<h2 className="text-[10px] sm:text-xs text-[black] font-bold mb-1.5 opacity-70">Mainnet</h2>
 				<div className="bg-[#d0e8ff99] rounded-lg border border-[black]/20 overflow-hidden">
-					<table className="w-full text-left">
+					<table className="w-full text-left" role="table" aria-label="Mainnet chain balances">
 						<thead>
 							<tr className="bg-[black]/5">
-								<th className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold">Chain</th>
-								<th className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold text-right">Balance</th>
-								<th className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold text-center w-8">Status</th>
+								<th scope="col" className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold">Chain</th>
+								<th scope="col" className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold text-right">Balance</th>
+								<th scope="col" className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold text-center w-8" aria-label="Claim status">Status</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -141,14 +157,14 @@ export default function BalanceDisplay({
 
 			{/* Testnet Chains */}
 			<div>
-				<p className="text-[10px] sm:text-xs text-[black] font-bold mb-1.5 opacity-70">Testnet</p>
+				<h2 className="text-[10px] sm:text-xs text-[black] font-bold mb-1.5 opacity-70">Testnet</h2>
 				<div className="bg-[#d0e8ff99] rounded-lg border border-[black]/20 overflow-hidden">
-					<table className="w-full text-left">
+					<table className="w-full text-left" role="table" aria-label="Testnet chain balances">
 						<thead>
 							<tr className="bg-[black]/5">
-								<th className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold">Chain</th>
-								<th className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold text-right">Balance</th>
-								<th className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold text-center w-8">Status</th>
+								<th scope="col" className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold">Chain</th>
+								<th scope="col" className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold text-right">Balance</th>
+								<th scope="col" className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold text-center w-8" aria-label="Claim status">Status</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -157,7 +173,7 @@ export default function BalanceDisplay({
 					</table>
 				</div>
 			</div>
-		</div>
+		</section>
 	);
 }
 

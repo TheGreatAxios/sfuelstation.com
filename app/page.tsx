@@ -84,27 +84,34 @@ export default function App() {
 	return (
 		<div>
 			<Navigation />
-			<div className="flex justify-center mt-8 mb-4">
+			<header className="flex justify-center mt-8 mb-4" role="banner">
 				<Image 
 					src="/skale_logo_b.svg" 
-					alt="SKALE Network" 
+					alt="SKALE Network Logo" 
 					width={200}
 					height={100}
 					priority
+					aria-hidden="false"
 				/>
-			</div>
-			<div className="container mx-auto px-4 pt-0 pb-12 flex flex-col justify-center min-h-screen w-full sm:w-[40vw]">
+			</header>
+			<main className="container mx-auto px-4 pt-0 pb-12 flex flex-col justify-center min-h-screen w-full sm:w-[40vw]" role="main">
 				<h1 className="text-center font-medium tracking-tighter text-5xl sm:text-7xl mb-8 text-[black]">
 					s<span style={{ color: "var(--accent)" }}>FUEL</span> Station
 				</h1>
 
-				<p className="text-[black] text-sm sm:text-base text-left py-2 mx-1 sm:mx-3">
+				<p className="text-[black] text-sm sm:text-base text-left py-2 mx-1 sm:mx-3" id="description">
 					Enter wallet address or ENS Name to claim sFUEL across all SKALE chains
+				</p>
+
+				<p id="wallet-address-description" className="sr-only">
+					Enter your Ethereum wallet address (starting with 0x) or ENS domain name to claim sFUEL tokens
 				</p>
 
 				<form
 					onSubmit={claimAllChains}
 					className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-[#d0e8ff99] p-3 rounded-xl font-mono border-2 border-[black] transition-colors duration-300 focus-within:border-[#017ee1] w-full"
+					aria-labelledby="description"
+					noValidate
 				>
 					<DebouncedInput
 						onStopTyping={(value) => {
@@ -116,6 +123,8 @@ export default function App() {
 						type="submit"
 						disabled={!resolvedAddress || Object.values(claimingStatus).some((s) => s === "claiming")}
 						className="bg-[black] text-[white] border-0 px-5 py-2 rounded-lg font-bold transition-all duration-100 hover:bg-[#017ee1] hover:-translate-y-px cursor-pointer whitespace-nowrap w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+						aria-label="Claim sFUEL tokens for all SKALE Network chains"
+						aria-busy={Object.values(claimingStatus).some((s) => s === "claiming")}
 					>
 						{Object.values(claimingStatus).some((s) => s === "claiming")
 							? "Claiming..."
@@ -125,13 +134,13 @@ export default function App() {
 
 				{/* Address validation message */}
 				{inputValue && addressStatus === "error" && (
-					<p className="text-xs text-[red] text-center mt-2">
+					<p className="text-xs text-[red] text-center mt-2" role="alert" aria-live="polite">
 						Invalid address or ENS name
 					</p>
 				)}
 
 				{inputValue && addressStatus === "loading" && (
-					<p className="text-xs text-[black] text-center mt-2 opacity-70">
+					<p className="text-xs text-[black] text-center mt-2 opacity-70" role="status" aria-live="polite" aria-label="Validating address">
 						Validating address...
 					</p>
 				)}
@@ -145,7 +154,7 @@ export default function App() {
 				{resolvedAddress && (
 					<BalanceDisplay address={resolvedAddress} claimingStatus={claimingStatus} />
 				)}
-			</div>
+			</main>
 
 			<Footer />
 			<Toaster theme="light" richColors={true} />
