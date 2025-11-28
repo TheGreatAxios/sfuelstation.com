@@ -8,11 +8,10 @@ export type ChainConfig = {
 	color: string;
 	background: string;
 	gradientBackground: string;
-	proofOfWork: string;
 	threshold: number;
 	network: "mainnet" | "testnet";
 	chainKey: string;
-	functionSignature: string; // Europa mainnet uses 0x6a627842, others use 0x0c11dedd
+	distributionAmount: number; // Amount of sFUEL to distribute per claim
 };
 
 // Calypso Mainnet
@@ -201,11 +200,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#ce126f",
 		gradientBackground: "linear-gradient(270deg, rgb(103 35 71), rgb(57 15 68))",
-		proofOfWork: "0x02891b34B7911A9C68e82C193cd7A6fBf0c3b30A",
 		threshold: 0.005,
 		network: "mainnet",
 		chainKey: "calypso-mainnet",
-		functionSignature: "0x0c11dedd"
+		distributionAmount: 0.0001
 	},
 	// Calypso Testnet
 	{
@@ -216,11 +214,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#ce126f",
 		gradientBackground: "linear-gradient(270deg, rgb(103 35 71), rgb(57 15 68))",
-		proofOfWork: "0x62Fe932FF26e0087Ae383f6080bd2Ed481bA5A8A",
 		threshold: 0.5,
 		network: "testnet",
 		chainKey: "calypso-testnet",
-		functionSignature: "0x0c11dedd"
+		distributionAmount: 0.01
 	},
 	// Europa Mainnet
 	{
@@ -231,11 +228,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "rgb(5 19 37)",
 		gradientBackground: "linear-gradient(270deg, rgb(5, 19, 37), rgb(13 36 65))",
-		proofOfWork: "0x2B267A3e49b351DEdac892400a530ABb2f899d23",
 		threshold: 0.1,
 		network: "mainnet",
 		chainKey: "europa-mainnet",
-		functionSignature: "0x6a627842" // Europa mainnet uses mint function
+		distributionAmount: 0.0001
 	},
 	// Europa Testnet
 	{
@@ -246,11 +242,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "rgb(5 19 37)",
 		gradientBackground: "linear-gradient(270deg, rgb(5, 19, 37), rgb(13 36 65))",
-		proofOfWork: "0x366727B410fE55774C8b0B5b5A6E2d74199a088A",
 		threshold: 0.5,
 		network: "testnet",
 		chainKey: "europa-testnet",
-		functionSignature: "0x0c11dedd"
+		distributionAmount: 0.01
 	},
 	// Nebula Mainnet
 	{
@@ -261,11 +256,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#2c1626",
 		gradientBackground: "linear-gradient(270deg, #2f1728, #1b0e17)",
-		proofOfWork: "0x5a6869ef5b81DCb58EBF51b8F893c31f5AFE3Fa8",
 		threshold: 0.0001,
 		network: "mainnet",
 		chainKey: "nebula-mainnet",
-		functionSignature: "0x0c11dedd"
+		distributionAmount: 0.0001
 	},
 	// Nebula Testnet
 	{
@@ -276,11 +270,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#2c1626",
 		gradientBackground: "linear-gradient(270deg, #2f1728, #1b0e17)",
-		proofOfWork: "0x000E9c53C4e2e21F5063f2e232d0AA907318dccb",
 		threshold: 0.5,
 		network: "testnet",
 		chainKey: "nebula-testnet",
-		functionSignature: "0x0c11dedd"
+		distributionAmount: 0.01
 	},
 	// Titan Mainnet
 	{
@@ -291,11 +284,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#FFF",
 		gradientBackground: "linear-gradient(270deg, rgb(72, 33, 17), rgb(34, 13, 5))",
-		proofOfWork: "0xa5C297dF8f8386E4b940D61EF9A8f2bB367a6fAB",
 		threshold: 0.005,
 		network: "mainnet",
 		chainKey: "titan-mainnet",
-		functionSignature: "0x0c11dedd"
+		distributionAmount: 0.0001
 	},
 	// Titan Testnet
 	{
@@ -306,11 +298,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#FFF",
 		gradientBackground: "linear-gradient(270deg, rgb(72, 33, 17), rgb(34, 13, 5))",
-		proofOfWork: "0x08f98Af60eb83C18184231591A8F89577E46A4B9",
 		threshold: 0.5,
 		network: "testnet",
 		chainKey: "titan-testnet",
-		functionSignature: "0x0c11dedd"
+		distributionAmount: 0.01
 	}
 ];
 

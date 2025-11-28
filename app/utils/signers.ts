@@ -51,12 +51,14 @@ export class MultiSignerManager {
 
 /**
  * Get the current signer index from Redis and increment for next use
- * Uses a global key that rotates across all signers
+ * Uses a per-chain key that rotates across all signers for each chain independently
  */
 export async function getNextSignerIndex(
 	redis: any,
-	key: string = "current_signer_index"
+	chainKey?: string
 ): Promise<number> {
+	// Use chain-specific key if provided, otherwise use global key
+	const key = chainKey ? `current_signer_index:${chainKey}` : "current_signer_index";
 	const currentIndex = await redis.get(key);
 	if (currentIndex === null || currentIndex === undefined) {
 		// Initialize to 0 if not set
@@ -71,13 +73,14 @@ export async function getNextSignerIndex(
 
 /**
  * Get and increment nonce for a specific signer on a specific chain
+ * Uses chainKey for better readability (matches skale-base-sepolia pattern)
  */
 export async function getAndIncrementNonce(
 	redis: any,
 	signerIndex: number,
-	chainId: number
+	chainKey: string
 ): Promise<number> {
-	const nonceKey = `nonce:signer:${signerIndex}:chain:${chainId}`;
+	const nonceKey = `nonce:${chainKey}:signer:${signerIndex}`;
 	const currentNonce = await redis.get(nonceKey);
 	const nonce = currentNonce ? Number(currentNonce) : 0;
 

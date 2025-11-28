@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, getAddress, http, isAddress, type Address } from "viem";
+import { createPublicClient, getAddress, http, isAddress, parseEther, type Address } from "viem";
 import { mainnet } from "viem/chains";
 import { Redis } from "@upstash/redis";
 import { allChains, type ChainConfig } from "../../config";
@@ -13,7 +13,6 @@ const ethPublicClient = createPublicClient({
 	chain: mainnet
 });
 
-const GAS_LIMIT = 100_000n;
 const GAS_PRICE = 10_000_000_000n; // 10 gwei
 
 // Arcjet protection configuration
@@ -125,12 +124,12 @@ export async function POST(request: NextRequest) {
 		// Process all chains in parallel
 		const claimPromises = allChains.map(async (chainConfig) => {
 			try {
-				// Get next signer index and wallet for this transaction
-				const signerIndex = await getNextSignerIndex(redis);
+				// Get next signer index for this chain (per-chain rotation)
+				const signerIndex = await getNextSignerIndex(redis, chainConfig.chainKey);
 				const wallet = signerManager.getSigner(signerIndex, chainConfig.chain);
 
 				// Get and increment nonce for this signer on this chain
-				const nonce = await getAndIncrementNonce(redis, signerIndex, chainConfig.chain.id);
+				const nonce = await getAndIncrementNonce(redis, signerIndex, chainConfig.chainKey);
 
 				// Create public client for this chain
 				const publicClient = createPublicClient({
@@ -138,16 +137,12 @@ export async function POST(request: NextRequest) {
 					chain: chainConfig.chain
 				});
 
-				// Prepare transaction data
-				// Encode recipient address as last 20 bytes (remove 0x prefix)
-				const recipientAddress = resolvedAddress.substring(2).toLowerCase();
-				const data = `${chainConfig.functionSignature}000000000000000000000000${recipientAddress}` as `0x${string}`;
-
-				// Send transaction
+				// Send direct transfer
+				const distributionAmount = parseEther(chainConfig.distributionAmount.toString());
 				const hash = await wallet.sendTransaction({
-					to: chainConfig.proofOfWork as Address,
-					data,
-					gas: GAS_LIMIT,
+					to: resolvedAddress,
+					value: distributionAmount,
+					gas: BigInt(21_000), // Standard transfer gas limit
 					gasPrice: GAS_PRICE,
 					nonce
 				});
