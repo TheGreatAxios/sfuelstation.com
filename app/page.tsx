@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Image from "next/image";
 import { Footer } from "./components/Footer";
 import { Navigation } from "./components/Navigation";
 import { allChains } from "./config";
@@ -83,6 +84,15 @@ export default function App() {
 	return (
 		<div>
 			<Navigation />
+			<div className="flex justify-center mt-8 mb-4">
+				<Image 
+					src="/skale_logo_b.svg" 
+					alt="SKALE Network" 
+					width={200}
+					height={100}
+					priority
+				/>
+			</div>
 			<div className="container mx-auto px-4 pt-0 pb-12 flex flex-col justify-center min-h-screen w-full sm:w-[40vw]">
 				<h1 className="text-center font-medium tracking-tighter text-5xl sm:text-7xl mb-8 text-[black]">
 					s<span style={{ color: "var(--accent)" }}>FUEL</span> Station
