@@ -122,54 +122,52 @@ export async function POST(request: NextRequest) {
 		}
 
 		// Process all chains in parallel
-		const claimPromises = allChains.map(async (chainConfig) => {
-			try {
-				// Get next signer index for this chain (per-chain rotation)
-				const signerIndex = await getNextSignerIndex(redis, chainConfig.chainKey);
-				const wallet = signerManager.getSigner(signerIndex, chainConfig.chain);
+		const claimResults = await Promise.all(
+			allChains.map(async (chainConfig) => {
+				try {
+					// Get next signer index for this chain (per-chain rotation)
+					const signerIndex = await getNextSignerIndex(redis, chainConfig.chainKey);
+					const wallet = signerManager.getSigner(signerIndex, chainConfig.chain);
 
-				// Get and increment nonce for this signer on this chain
-				const nonce = await getAndIncrementNonce(redis, signerIndex, chainConfig.chainKey);
+					// Get and increment nonce for this signer on this chain
+					const nonce = await getAndIncrementNonce(redis, signerIndex, chainConfig.chainKey);
 
-				// Create public client for this chain
-				const publicClient = createPublicClient({
-					transport: http(),
-					chain: chainConfig.chain
-				});
+					// Create public client for this chain
+					const publicClient = createPublicClient({
+						transport: http(),
+						chain: chainConfig.chain
+					});
 
-				// Send direct transfer
-				const distributionAmount = parseEther(chainConfig.distributionAmount.toString());
-				const hash = await wallet.sendTransaction({
-					to: resolvedAddress,
-					value: distributionAmount,
-					gas: BigInt(21_000), // Standard transfer gas limit
-					gasPrice: GAS_PRICE,
-					nonce
-				});
+					// Send direct transfer
+					const distributionAmount = parseEther(chainConfig.distributionAmount.toString());
+					const hash = await wallet.sendTransaction({
+						chain: chainConfig.chain,
+						to: resolvedAddress,
+						value: distributionAmount,
+						gas: BigInt(21_000), // Standard transfer gas limit
+						gasPrice: GAS_PRICE,
+						nonce
+					});
 
-				// Wait for transaction receipt
-				await publicClient.waitForTransactionReceipt({ hash });
+					// Wait for transaction receipt
+					await publicClient.waitForTransactionReceipt({ hash });
 
-				return {
-					chainKey: chainConfig.chainKey,
-					chainName: chainConfig.name,
-					success: true,
-					hash
-				};
-			} catch (error: any) {
-				console.error(`Error claiming for ${chainConfig.chainKey}:`, error);
-				return {
-					chainKey: chainConfig.chainKey,
-					chainName: chainConfig.name,
-					success: false,
-					error: error.message || String(error)
-				};
-			}
-		});
-
-		const results = await Promise.allSettled(claimPromises);
-		const claimResults = results.map((result) =>
-			result.status === "fulfilled" ? result.value : { success: false, error: "Promise rejected" }
+					return {
+						chainKey: chainConfig.chainKey,
+						chainName: chainConfig.name,
+						success: true,
+						hash
+					};
+				} catch (error: any) {
+					console.error(`Error claiming for ${chainConfig.chainKey}:`, error);
+					return {
+						chainKey: chainConfig.chainKey,
+						chainName: chainConfig.name,
+						success: false,
+						error: error.message || String(error)
+					};
+				}
+			})
 		);
 
 		const successful = claimResults.filter((r) => r.success).length;
