@@ -11,10 +11,12 @@ type ChainBalance = {
 
 export default function BalanceDisplay({
 	address,
-	claimingStatus
+	claimingStatus,
+	refreshKey
 }: {
 	address?: Address;
 	claimingStatus?: Record<string, "idle" | "claiming" | "success" | "error">;
+	refreshKey?: number;
 }) {
 	const [balances, setBalances] = useState<Record<string, ChainBalance>>({});
 
@@ -73,7 +75,7 @@ export default function BalanceDisplay({
 		};
 
 		fetchBalances();
-	}, [address]);
+	}, [address, refreshKey]);
 
 	if (!address) return null;
 

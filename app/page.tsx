@@ -13,6 +13,7 @@ import { useResolvedAddress } from "./hooks/useBalance";
 export default function App() {
 	const [inputValue, setInputValue] = useState<string>("");
 	const [claimingStatus, setClaimingStatus] = useState<Record<string, "idle" | "claiming" | "success" | "error">>({});
+	const [refreshKey, setRefreshKey] = useState<number>(0);
 
 	const { status: addressStatus, address: resolvedAddress } = useResolvedAddress(inputValue);
 
@@ -52,22 +53,30 @@ export default function App() {
 
 			// Update status for each chain based on results
 			const updatedStatus: Record<string, "idle" | "claiming" | "success" | "error"> = {};
+			let successCount = 0;
+			let errorCount = 0;
+			
 			for (const result of data.results) {
 				updatedStatus[result.chainKey] = result.success ? "success" : "error";
 				if (result.success) {
-					toast.success(`Successfully claimed sFUEL on ${result.chainName}`);
+					successCount++;
 				} else {
+					errorCount++;
 					toast.error(`Failed to claim on ${result.chainName}: ${result.error}`);
 				}
 			}
 
+			// Show single consolidated success message
+			if (successCount > 0) {
+				toast.success(`Filled Up on ${successCount} Chain${successCount !== 1 ? 's' : ''}`);
+			}
+
 			setClaimingStatus(updatedStatus);
 
-			// Refresh balances after a short delay
+			// Refresh balances after a short delay by triggering a refresh key update
+			// This keeps the balance boxes visible while refreshing
 			setTimeout(() => {
-				// Trigger balance refresh by updating input (this will cause BalanceDisplay to refresh)
-				setInputValue((prev) => prev + " ");
-				setTimeout(() => setInputValue((prev) => prev.trim()), 100);
+				setRefreshKey((prev) => prev + 1);
 			}, 2000);
 		} catch (error: any) {
 			console.error("Error claiming sFUEL:", error);
@@ -153,7 +162,11 @@ export default function App() {
 
 				{/* Combined Balance and Status Display */}
 				{resolvedAddress && (
-					<BalanceDisplay address={resolvedAddress} claimingStatus={claimingStatus} />
+					<BalanceDisplay 
+						address={resolvedAddress} 
+						claimingStatus={claimingStatus}
+						refreshKey={refreshKey}
+					/>
 				)}
 			</main>
 
