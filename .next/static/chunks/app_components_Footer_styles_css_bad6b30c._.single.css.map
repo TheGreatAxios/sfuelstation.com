@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["turbopack:///[project]/app/components/Footer/styles.css"],"sourcesContent":["footer {\n\tposition: absolute;\n\tbottom: 0; /* stick to bottom */\n\tleft: 0;\n\twidth: 100%; /* full width */\n\tpadding: 16px 0; /* adjust padding */\n\tdisplay: flex;\n\talign-items: center;\n\tjustify-content: center;\n}\n\nfooter p {\n\tmargin: 0;\n\ttext-align: center;\n\tcolor: var(--black);\n\tfont-size: 12px;\n}\n"],"names":[],"mappings":"AAAA;;;;;;;;;;;AAWA"}}]
-}
