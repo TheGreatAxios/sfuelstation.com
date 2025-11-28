@@ -1,38 +1,33 @@
-# Welcome to Remix!
+# sFUEL Station
 
-- [Remix Docs](https://remix.run/docs)
+A Next.js application for claiming sFUEL tokens across multiple SKALE chains.
+
+## Environment Variables
+
+Create a `.env.local` file in the project root with the following variables:
+
+- `ARCJET_KEY` - Your Arcjet site key (get from https://app.arcjet.com). Required for bot protection and rate limiting.
 
 ## Development
 
 From your terminal:
 
 ```sh
-npm run dev
+pnpm dev
 ```
 
-This starts your app in development mode, rebuilding assets on file changes.
+This starts your app in development mode with Turbopack.
 
 ## Deployment
 
 First, build your app for production:
 
 ```sh
-npm run build
+pnpm build
 ```
 
 Then run the app in production mode:
 
 ```sh
-npm start
+pnpm start
 ```
-
-Now you'll need to pick a host to deploy it to.
-
-### DIY
-
-If you're familiar with deploying node applications, the built-in Remix app server is production-ready.
-
-Make sure to deploy the output of `remix build`
-
-- `build/`
-- `public/build/`

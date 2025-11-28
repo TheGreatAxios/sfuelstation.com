@@ -4,6 +4,8 @@ import { mainnet } from "viem/chains";
 import { Redis } from "@upstash/redis";
 import { allChains, type ChainConfig } from "../../config";
 import { signerManager, getNextSignerIndex, getAndIncrementNonce } from "../../utils/signers";
+import arcjet, { detectBot, tokenBucket } from "@arcjet/next";
+import { isSpoofedBot } from "@arcjet/inspect";
 
 const redis = Redis.fromEnv();
 const ethPublicClient = createPublicClient({
@@ -13,6 +15,51 @@ const ethPublicClient = createPublicClient({
 
 const GAS_LIMIT = 100_000n;
 const GAS_PRICE = 10_000_000_000n; // 10 gwei
+
+// Arcjet protection configuration
+const aj = arcjet({
+	key: process.env.ARCJET_KEY!,
+	rules: [
+		// Bot protection - block automated clients
+		detectBot({
+			mode: "LIVE", // Block requests, use "DRY_RUN" to log only
+			// Allow search engines only
+			allow: ["CATEGORY:SEARCH_ENGINE"],
+		}),
+		// Rate limiting - strict: 2 requests per minute
+		tokenBucket({
+			mode: "LIVE", // Block requests, use "DRY_RUN" to log only
+			characteristics: ["ip", "userId"], // Track by IP and wallet address
+			refillRate: 2, // Refill 2 tokens per interval
+			interval: 60, // Refill every 60 seconds (1 minute)
+			capacity: 2, // Maximum capacity of 2 tokens
+		}),
+	],
+});
+
+// Helper function to extract IP address from request
+function getIpAddress(request: NextRequest): string {
+	// Try various headers that might contain the IP
+	const forwarded = request.headers.get("x-forwarded-for");
+	if (forwarded) {
+		// x-forwarded-for can contain multiple IPs, take the first one
+		return forwarded.split(",")[0].trim();
+	}
+	
+	const realIp = request.headers.get("x-real-ip");
+	if (realIp) {
+		return realIp;
+	}
+	
+	const cfConnectingIp = request.headers.get("cf-connecting-ip");
+	if (cfConnectingIp) {
+		return cfConnectingIp;
+	}
+	
+	// Fallback to a default if no IP can be determined
+	// Arcjet will handle this case
+	return "unknown";
+}
 
 export async function POST(request: NextRequest) {
 	try {
@@ -26,7 +73,7 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		// Resolve address (handle ENS)
+		// Resolve address (handle ENS) - needed early for rate limiting
 		let resolvedAddress: `0x${string}`;
 		if (!isAddress(address)) {
 			const _resolvedAddress = await ethPublicClient.getEnsAddress({ name: address });
@@ -39,6 +86,40 @@ export async function POST(request: NextRequest) {
 			resolvedAddress = getAddress(_resolvedAddress);
 		} else {
 			resolvedAddress = getAddress(address);
+		}
+
+		// Extract IP address for rate limiting
+		const ip = getIpAddress(request);
+
+		// Apply Arcjet protection
+		const decision = await aj.protect(request, {
+			ip,
+			userId: resolvedAddress, // Use wallet address as userId for rate limiting
+			requested: 1, // Each request consumes 1 token
+		});
+
+		// Check if request is denied
+		if (decision.isDenied()) {
+			// Bot detection
+			if (decision.reason.isBot()) {
+				return NextResponse.json(
+					{ error: "Access denied. Automated clients are not allowed." },
+					{ status: 403 }
+				);
+			}
+			// Rate limiting
+			return NextResponse.json(
+				{ error: "Too many requests. Please wait before trying again." },
+				{ status: 429 }
+			);
+		}
+
+		// Additional bot verification check (for paid accounts)
+		if (decision.results.some(isSpoofedBot)) {
+			return NextResponse.json(
+				{ error: "Access denied. Suspicious activity detected." },
+				{ status: 403 }
+			);
 		}
 
 		// Process all chains in parallel

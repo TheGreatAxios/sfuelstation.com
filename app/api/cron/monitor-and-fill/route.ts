@@ -143,11 +143,15 @@ async function topUpSigner(
 		throw new Error("FUNDING_WALLET_PRIVATE_KEY not configured");
 	}
 
-	// Create funding wallet client
+	// Create funding wallet client and public client
 	const { privateKeyToAccount } = await import("viem/accounts");
 	const fundingAccount = privateKeyToAccount(FUNDING_WALLET_PRIVATE_KEY as `0x${string}`);
 	const fundingWallet = createWalletClient({
 		account: fundingAccount,
+		transport: http(),
+		chain
+	});
+	const publicClient = createPublicClient({
 		transport: http(),
 		chain
 	});
@@ -163,9 +167,16 @@ async function topUpSigner(
 	}
 
 	// Get nonce for funding wallet on this chain
+	// Fetch actual nonce from chain as source of truth
 	const nonceKey = `nonce:${chainKey}:funding_wallet`;
-	const currentNonce = await redis.get(nonceKey);
-	const nonce = currentNonce ? Number(currentNonce) : 0;
+	const actualNonce = await publicClient.getTransactionCount({
+		address: fundingAccount.address
+	});
+	const storedNonce = await redis.get<number>(nonceKey);
+	
+	// Use the higher of actual chain nonce or stored nonce to handle any discrepancies
+	// This ensures we never use a nonce lower than what's actually on-chain
+	const nonce = storedNonce !== null && storedNonce > actualNonce ? storedNonce : actualNonce;
 
 	// Send transaction
 	await fundingWallet.sendTransaction({
@@ -177,10 +188,11 @@ async function topUpSigner(
 		chain
 	});
 
-	// Update nonce
+	// Update nonce after successful transaction
+	// Since we process signers sequentially within each chain, this is safe
 	await redis.set(nonceKey, nonce + 1);
 
-	console.log(`[${chainKey}] Topped up signer ${signerIndex} with ${amountToSend} wei`);
+	console.log(`[${chainKey}] Topped up signer ${signerIndex} (${address}) with ${amountToSend} wei using nonce ${nonce}`);
 }
 
 // Health check endpoint for cron monitoring
