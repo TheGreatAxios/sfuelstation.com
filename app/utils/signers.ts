@@ -23,9 +23,11 @@ export class MultiSignerManager {
 		}
 
 		const account = mnemonicToAccount(this.mnemonic, { addressIndex: signerIndex });
+		// Explicitly use the chain's RPC URL to avoid URL parsing issues
+		const rpcUrl = chain.rpcUrls.default.http[0];
 		return createWalletClient({
 			account,
-			transport: http(),
+			transport: http(rpcUrl),
 			chain
 		});
 	}

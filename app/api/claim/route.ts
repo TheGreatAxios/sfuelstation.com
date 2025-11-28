@@ -7,7 +7,15 @@ import { signerManager, getNextSignerIndex, getAndIncrementNonce } from "../../u
 import arcjet, { detectBot, tokenBucket } from "@arcjet/next";
 import { isSpoofedBot } from "@arcjet/inspect";
 
-const redis = Redis.fromEnv();
+// Initialize Redis with proper error handling
+let redis: ReturnType<typeof Redis.fromEnv>;
+try {
+	redis = Redis.fromEnv();
+} catch (error) {
+	console.error("Failed to initialize Redis:", error);
+	throw new Error("Redis configuration is missing. Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables.");
+}
+
 const ethPublicClient = createPublicClient({
 	transport: http(),
 	chain: mainnet
@@ -37,27 +45,30 @@ const aj = arcjet({
 });
 
 // Helper function to extract IP address from request
-function getIpAddress(request: NextRequest): string {
+// Returns null if IP cannot be determined (Arcjet will handle this)
+function getIpAddress(request: NextRequest): string | null {
 	// Try various headers that might contain the IP
 	const forwarded = request.headers.get("x-forwarded-for");
 	if (forwarded) {
 		// x-forwarded-for can contain multiple IPs, take the first one
-		return forwarded.split(",")[0].trim();
+		const ip = forwarded.split(",")[0].trim();
+		if (ip && ip !== "unknown") {
+			return ip;
+		}
 	}
 	
 	const realIp = request.headers.get("x-real-ip");
-	if (realIp) {
+	if (realIp && realIp !== "unknown") {
 		return realIp;
 	}
 	
 	const cfConnectingIp = request.headers.get("cf-connecting-ip");
-	if (cfConnectingIp) {
+	if (cfConnectingIp && cfConnectingIp !== "unknown") {
 		return cfConnectingIp;
 	}
 	
-	// Fallback to a default if no IP can be determined
-	// Arcjet will handle this case
-	return "unknown";
+	// Return null if no IP can be determined - Arcjet will skip IP-based rate limiting
+	return null;
 }
 
 export async function POST(request: NextRequest) {
@@ -88,7 +99,8 @@ export async function POST(request: NextRequest) {
 		}
 
 		// Extract IP address for rate limiting
-		const ip = getIpAddress(request);
+		// Use a fallback if IP cannot be determined (Arcjet requires a value)
+		const ip = getIpAddress(request) || "0.0.0.0";
 
 		// Apply Arcjet protection
 		const decision = await aj.protect(request, {
@@ -133,8 +145,10 @@ export async function POST(request: NextRequest) {
 					const nonce = await getAndIncrementNonce(redis, signerIndex, chainConfig.chainKey);
 
 					// Create public client for this chain
+					// Explicitly use the chain's RPC URL to avoid URL parsing issues
+					const rpcUrl = chainConfig.chain.rpcUrls.default.http[0];
 					const publicClient = createPublicClient({
-						transport: http(),
+						transport: http(rpcUrl),
 						chain: chainConfig.chain
 					});
 
