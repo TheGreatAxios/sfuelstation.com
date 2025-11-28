@@ -97,8 +97,18 @@ export async function GET(request: NextRequest) {
 			}
 		});
 
-		const totalLowBalance = processedResults.reduce((sum, r) => sum + (r.lowBalanceSigners?.length || 0), 0);
-		const totalChecked = processedResults.reduce((sum, r) => sum + (r.checked || 0), 0);
+		const totalLowBalance = processedResults.reduce((sum, r) => {
+			if ('lowBalanceSigners' in r) {
+				return sum + (r.lowBalanceSigners?.length || 0);
+			}
+			return sum;
+		}, 0);
+		const totalChecked = processedResults.reduce((sum, r) => {
+			if ('checked' in r) {
+				return sum + (r.checked || 0);
+			}
+			return sum;
+		}, 0);
 
 		return NextResponse.json({
 			success: true,
