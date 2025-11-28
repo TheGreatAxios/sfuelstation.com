@@ -1,6 +1,7 @@
 import { allChains, type ChainConfig } from "@/app/config";
 import { createPublicClient, http, type Address, type PublicClient } from "viem";
 import { useEffect, useState } from "react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 type ChainBalance = {
 	chainKey: string;
@@ -115,7 +116,36 @@ export default function BalanceDisplay({
 		return (
 			<tr key={chainConfig.chainKey} className="border-b border-[black]/10 last:border-0">
 				<td className="py-1.5 px-2 text-[10px] sm:text-xs text-[black] font-medium">
-					{chainName}
+					<div className="flex items-center gap-1.5">
+						<span>{chainName}</span>
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<button
+									type="button"
+									className="inline-flex items-center justify-center w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-[black]/10 hover:bg-[black]/20 text-[black] text-[10px] sm:text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[#017ee1] focus:ring-offset-1"
+									aria-label="View all SKALE chains"
+								>
+									?
+								</button>
+							</TooltipTrigger>
+							<TooltipContent 
+								className="bg-[black] text-[white] text-[10px] sm:text-xs max-w-[calc(100vw-2rem)] sm:max-w-[250px] p-2 z-50"
+								side="top"
+								sideOffset={5}
+							>
+								<div className="space-y-1">
+									<p className="font-semibold mb-1.5">All 8 SKALE Chains:</p>
+									<ul className="list-disc list-inside space-y-0.5 text-left">
+										{allChains.map((chain) => (
+											<li key={chain.chainKey} className="text-[10px] sm:text-xs">
+												{chain.name}
+											</li>
+										))}
+									</ul>
+								</div>
+							</TooltipContent>
+						</Tooltip>
+					</div>
 				</td>
 				<td className="py-1.5 px-2 text-[10px] sm:text-xs text-[black] text-right" aria-label={`Balance for ${chainName}`}>
 					{balanceText && `${balanceText} sFUEL`}
@@ -139,8 +169,8 @@ export default function BalanceDisplay({
 			{/* Mainnet Chains */}
 			<div className="mb-3">
 				<h2 className="text-[10px] sm:text-xs text-[black] font-bold mb-1.5 opacity-70">Mainnet</h2>
-				<div className="bg-[#d0e8ff99] rounded-lg border border-[black]/20 overflow-hidden">
-					<table className="w-full text-left" role="table" aria-label="Mainnet chain balances">
+				<div className="bg-[#d0e8ff99] rounded-lg border border-[black]/20 overflow-hidden overflow-x-auto">
+					<table className="w-full text-left min-w-[280px]" role="table" aria-label="Mainnet chain balances">
 						<thead>
 							<tr className="bg-[black]/5">
 								<th scope="col" className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold">Chain</th>
@@ -158,8 +188,8 @@ export default function BalanceDisplay({
 			{/* Testnet Chains */}
 			<div>
 				<h2 className="text-[10px] sm:text-xs text-[black] font-bold mb-1.5 opacity-70">Testnet</h2>
-				<div className="bg-[#d0e8ff99] rounded-lg border border-[black]/20 overflow-hidden">
-					<table className="w-full text-left" role="table" aria-label="Testnet chain balances">
+				<div className="bg-[#d0e8ff99] rounded-lg border border-[black]/20 overflow-hidden overflow-x-auto">
+					<table className="w-full text-left min-w-[280px]" role="table" aria-label="Testnet chain balances">
 						<thead>
 							<tr className="bg-[black]/5">
 								<th scope="col" className="py-1 px-2 text-[10px] sm:text-xs text-[black] font-bold">Chain</th>

@@ -84,7 +84,7 @@ export default function App() {
 	return (
 		<div>
 			<Navigation />
-			<header className="flex justify-center mt-8 mb-4" role="banner">
+			<header className="flex justify-center mt-4 sm:mt-8 mb-4 px-4" role="banner">
 				<Image 
 					src="/skale_logo_b.svg" 
 					alt="SKALE Network Logo" 
@@ -92,14 +92,15 @@ export default function App() {
 					height={100}
 					priority
 					aria-hidden="false"
+					className="w-[150px] sm:w-[200px] h-auto"
 				/>
 			</header>
-			<main className="container mx-auto px-4 pt-0 pb-12 flex flex-col justify-center min-h-screen w-full sm:w-[40vw]" role="main">
-				<h1 className="text-center font-medium tracking-tighter text-5xl sm:text-7xl mb-8 text-[black]">
+			<main className="container mx-auto px-4 pt-0 pb-12 flex flex-col justify-center min-h-screen w-full sm:w-[40vw] max-w-full" role="main">
+				<h1 className="text-center font-medium tracking-tighter text-4xl sm:text-5xl md:text-7xl mb-6 sm:mb-8 text-[black] px-2">
 					s<span style={{ color: "var(--accent)" }}>FUEL</span> Station
 				</h1>
 
-				<p className="text-[black] text-sm sm:text-base text-left py-2 mx-1 sm:mx-3" id="description">
+				<p className="text-[black] text-xs sm:text-sm md:text-base text-left py-2 mx-1 sm:mx-3" id="description">
 					Enter wallet address or ENS Name to claim sFUEL across all SKALE chains
 				</p>
 
@@ -128,7 +129,7 @@ export default function App() {
 					>
 						{Object.values(claimingStatus).some((s) => s === "claiming")
 							? "Claiming..."
-							: "Claim All Chains"}
+							: "Claim"}
 					</button>
 				</form>
 
