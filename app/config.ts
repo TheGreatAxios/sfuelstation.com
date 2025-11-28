@@ -200,7 +200,7 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#ce126f",
 		gradientBackground: "linear-gradient(270deg, rgb(103 35 71), rgb(57 15 68))",
-		threshold: 0.005,
+		threshold: 0.2,
 		network: "mainnet",
 		chainKey: "calypso-mainnet",
 		distributionAmount: 0.0001
@@ -214,10 +214,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#ce126f",
 		gradientBackground: "linear-gradient(270deg, rgb(103 35 71), rgb(57 15 68))",
-		threshold: 0.5,
+		threshold: 0.2,
 		network: "testnet",
 		chainKey: "calypso-testnet",
-		distributionAmount: 0.01
+		distributionAmount: 0.0001
 	},
 	// Europa Mainnet
 	{
@@ -228,7 +228,7 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "rgb(5 19 37)",
 		gradientBackground: "linear-gradient(270deg, rgb(5, 19, 37), rgb(13 36 65))",
-		threshold: 0.1,
+		threshold: 0.2,
 		network: "mainnet",
 		chainKey: "europa-mainnet",
 		distributionAmount: 0.0001
@@ -242,10 +242,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "rgb(5 19 37)",
 		gradientBackground: "linear-gradient(270deg, rgb(5, 19, 37), rgb(13 36 65))",
-		threshold: 0.5,
+		threshold: 0.2,
 		network: "testnet",
 		chainKey: "europa-testnet",
-		distributionAmount: 0.01
+		distributionAmount: 0.0001
 	},
 	// Nebula Mainnet
 	{
@@ -256,7 +256,7 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#2c1626",
 		gradientBackground: "linear-gradient(270deg, #2f1728, #1b0e17)",
-		threshold: 0.0001,
+		threshold: 0.2,
 		network: "mainnet",
 		chainKey: "nebula-mainnet",
 		distributionAmount: 0.0001
@@ -270,10 +270,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#2c1626",
 		gradientBackground: "linear-gradient(270deg, #2f1728, #1b0e17)",
-		threshold: 0.5,
+		threshold: 0.2,
 		network: "testnet",
 		chainKey: "nebula-testnet",
-		distributionAmount: 0.01
+		distributionAmount: 0.0001
 	},
 	// Titan Mainnet
 	{
@@ -284,7 +284,7 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#FFF",
 		gradientBackground: "linear-gradient(270deg, rgb(72, 33, 17), rgb(34, 13, 5))",
-		threshold: 0.005,
+		threshold: 0.2,
 		network: "mainnet",
 		chainKey: "titan-mainnet",
 		distributionAmount: 0.0001
@@ -298,10 +298,10 @@ export const allChains: ChainConfig[] = [
 		color: "#FFF",
 		background: "#FFF",
 		gradientBackground: "linear-gradient(270deg, rgb(72, 33, 17), rgb(34, 13, 5))",
-		threshold: 0.5,
+		threshold: 0.2,
 		network: "testnet",
 		chainKey: "titan-testnet",
-		distributionAmount: 0.01
+		distributionAmount: 0.0001
 	}
 ];
 

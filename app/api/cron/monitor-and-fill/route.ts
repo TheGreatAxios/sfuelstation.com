@@ -7,9 +7,10 @@ import { Resend } from "resend";
 
 // Environment variables
 const THRESHOLD = process.env.SIGNER_THRESHOLD || ""; // If set, use this as absolute threshold, otherwise use chain threshold
-const TARGET_BALANCE_MULTIPLIER = parseFloat(process.env.TARGET_BALANCE_MULTIPLIER || "2.5"); // Default 2.5x for top-up target
+const SIGNER_TARGET_BALANCE = parseEther(process.env.SIGNER_TARGET_BALANCE || "1"); // Default 1 sFUEL per signer
 const FUNDING_WALLET_PRIVATE_KEY = process.env.FUNDING_WALLET_PRIVATE_KEY;
 const MAX_SIGNERS = parseInt(process.env.MAX_SIGNERS || "10");
+const FUNDING_WALLET_TARGET = parseEther(process.env.FUNDING_WALLET_TARGET || "30"); // Default 30 sFUEL for funding wallet
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const NOTIFICATION_EMAIL = process.env.NOTIFICATION_EMAIL;
@@ -32,17 +33,20 @@ export async function GET(request: NextRequest) {
 
 		console.log(`Starting balance check for ${MAX_SIGNERS} signers across ${allChains.length} chains`);
 
+		// Collect all Discord messages to send at the end
+		const discordMessages: string[] = [];
+
 		// Check funding wallet balance for all chains
-		await checkFundingWalletBalances();
+		const fundingWalletResults = await checkFundingWalletBalances(discordMessages);
 
 		// Process all chains in parallel
 		const chainResults = await Promise.allSettled(
 			allChains.map(async (chainConfig) => {
 				const chain = chainConfig.chain;
-				// Use absolute threshold if set, otherwise use chain threshold
+				// Use absolute threshold if set, otherwise use 20% of target (0.2 sFUEL)
 				const threshold = THRESHOLD 
 					? parseEther(THRESHOLD)
-					: parseEther(chainConfig.threshold.toString());
+					: SIGNER_TARGET_BALANCE * BigInt(20) / BigInt(100); // 20% of 1 sFUEL = 0.2 sFUEL
 				
 				const publicClient = createPublicClient({
 					transport: http(),
@@ -76,7 +80,7 @@ export async function GET(request: NextRequest) {
 						});
 
 						// Top up this signer
-						await topUpSigner(i, address, balance, chain, chainConfig.chainKey, threshold);
+						await topUpSigner(i, address, balance, chain, chainConfig.chainKey);
 					} else {
 						results.push(`Signer ${i} (${address}) - Balance OK: ${balance}`);
 					}
@@ -118,6 +122,12 @@ export async function GET(request: NextRequest) {
 			return sum;
 		}, 0);
 
+		// Send single Discord message at the end if there are any messages
+		if (discordMessages.length > 0) {
+			const combinedMessage = discordMessages.join("\n\n");
+			await sendDiscordNotification(combinedMessage);
+		}
+
 		return NextResponse.json({
 			success: true,
 			message: `Checked ${totalChecked} signers across ${allChains.length} chains. ${totalLowBalance} needed top-up.`,
@@ -144,8 +154,7 @@ async function topUpSigner(
 	address: string,
 	currentBalance: bigint,
 	chain: typeof allChains[0]['chain'],
-	chainKey: string,
-	threshold: bigint
+	chainKey: string
 ) {
 	if (!FUNDING_WALLET_PRIVATE_KEY) {
 		throw new Error("FUNDING_WALLET_PRIVATE_KEY not configured");
@@ -164,10 +173,8 @@ async function topUpSigner(
 		chain
 	});
 
-	// Calculate amount to send (target balance minus current balance)
-	// Top up to TARGET_BALANCE_MULTIPLIER times the threshold to provide buffer
-	const thresholdValue = threshold;
-	const targetBalance = parseEther((Number(thresholdValue) / 1e18 * TARGET_BALANCE_MULTIPLIER).toString());
+	// Calculate amount to send: top up to 1 sFUEL (SIGNER_TARGET_BALANCE)
+	const targetBalance = SIGNER_TARGET_BALANCE;
 	const amountToSend = targetBalance - currentBalance;
 
 	if (amountToSend <= BigInt(0)) {
@@ -203,7 +210,7 @@ async function topUpSigner(
 	console.log(`[${chainKey}] Topped up signer ${signerIndex} (${address}) with ${amountToSend} wei using nonce ${nonce}`);
 }
 
-async function checkFundingWalletBalances() {
+async function checkFundingWalletBalances(discordMessages: string[]) {
 	if (!FUNDING_WALLET_PRIVATE_KEY) {
 		return;
 	}
@@ -224,18 +231,14 @@ async function checkFundingWalletBalances() {
 				address: fundingAccount.address 
 			});
 
-			// Calculate target balance: MAX_SIGNERS * (threshold * TARGET_BALANCE_MULTIPLIER)
-			const threshold = THRESHOLD 
-				? parseEther(THRESHOLD)
-				: parseEther(chainConfig.threshold.toString());
-			const targetBalancePerSigner = parseEther((Number(threshold) / 1e18 * TARGET_BALANCE_MULTIPLIER).toString());
-			const totalTargetBalance = targetBalancePerSigner * BigInt(MAX_SIGNERS);
-			const twentyPercentThreshold = (totalTargetBalance * BigInt(20)) / BigInt(100);
+			// Alert threshold: 20% of 30 sFUEL = 6 sFUEL
+			const twentyPercentThreshold = (FUNDING_WALLET_TARGET * BigInt(20)) / BigInt(100);
 
 			if (fundingBalance < twentyPercentThreshold) {
 				const balanceFormatted = formatEther(fundingBalance);
 				const thresholdFormatted = formatEther(twentyPercentThreshold);
-				const percentage = (Number(fundingBalance) / Number(totalTargetBalance)) * 100;
+				const targetFormatted = formatEther(FUNDING_WALLET_TARGET);
+				const percentage = (Number(fundingBalance) / Number(FUNDING_WALLET_TARGET)) * 100;
 
 				const message = `⚠️ Funding Wallet Balance Alert\n\n` +
 					`Chain: ${chainConfig.name} (${chainConfig.chainKey})\n` +
@@ -243,16 +246,16 @@ async function checkFundingWalletBalances() {
 					`Current Balance: ${balanceFormatted} sFUEL\n` +
 					`20% Threshold: ${thresholdFormatted} sFUEL\n` +
 					`Percentage: ${percentage.toFixed(2)}%\n` +
-					`Target Balance: ${formatEther(totalTargetBalance)} sFUEL\n\n` +
+					`Target Balance: ${targetFormatted} sFUEL\n\n` +
 					`The funding wallet balance is below 20% of the target balance. Please top up immediately.`;
 
 				console.warn(`[${chainConfig.chainKey}] ${message}`);
 
-				// Send notifications in parallel
-				await Promise.allSettled([
-					sendDiscordNotification(message, chainConfig.name, chainConfig.chainKey),
-					sendEmailNotification(message, fundingAccount.address, balanceFormatted, thresholdFormatted, percentage, chainConfig.name, chainConfig.chainKey)
-				]);
+				// Collect message for Discord (will be sent at the end)
+				discordMessages.push(message);
+
+				// Send email notification immediately
+				await sendEmailNotification(message, fundingAccount.address, balanceFormatted, thresholdFormatted, percentage, chainConfig.name, chainConfig.chainKey);
 			}
 
 			return {
@@ -278,7 +281,7 @@ async function checkFundingWalletBalances() {
 	});
 }
 
-async function sendDiscordNotification(message: string, chainName: string, chainKey: string) {
+async function sendDiscordNotification(message: string) {
 	if (!DISCORD_WEBHOOK_URL) {
 		console.warn("DISCORD_WEBHOOK_URL not configured, skipping Discord notification");
 		return;
@@ -296,12 +299,12 @@ async function sendDiscordNotification(message: string, chainName: string, chain
 		});
 
 		if (!response.ok) {
-			console.error(`[${chainKey}] Discord webhook failed: ${response.status} ${response.statusText}`);
+			console.error(`Discord webhook failed: ${response.status} ${response.statusText}`);
 		} else {
-			console.log(`[${chainKey}] Discord notification sent successfully`);
+			console.log(`Discord notification sent successfully`);
 		}
 	} catch (error) {
-		console.error(`[${chainKey}] Error sending Discord notification:`, error);
+		console.error(`Error sending Discord notification:`, error);
 	}
 }
 
