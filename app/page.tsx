@@ -9,6 +9,7 @@ import BalanceDisplay from "./components/BalanceDisplay";
 import { toast, Toaster } from "sonner";
 import { DebouncedInput } from "./components/DebouncedInput";
 import { useResolvedAddress } from "./hooks/useBalance";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 export default function App() {
 	const [inputValue, setInputValue] = useState<string>("");
@@ -156,9 +157,38 @@ export default function App() {
 				)}
 
 				{/* Claim note */}
-				<p className="text-xs text-[black] text-center mt-2 opacity-70">
-					Claims sFUEL for all 8 SKALE chains
-				</p>
+				<div className="flex items-center justify-center gap-1.5 mt-2">
+					<p className="text-xs text-[black] text-center opacity-70">
+						Claims sFUEL for all 8 SKALE chains
+					</p>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<button
+								type="button"
+								className="inline-flex items-center justify-center w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-[black]/10 hover:bg-[black]/20 text-[black] text-[10px] sm:text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[#017ee1] focus:ring-offset-1"
+								aria-label="View all SKALE chains"
+							>
+								?
+							</button>
+						</TooltipTrigger>
+						<TooltipContent 
+							className="bg-[black] text-[white] text-[10px] sm:text-xs max-w-[calc(100vw-2rem)] sm:max-w-[250px] p-2 z-50"
+							side="top"
+							sideOffset={5}
+						>
+							<div className="space-y-1">
+								<p className="font-semibold mb-1.5">All 8 SKALE Chains:</p>
+								<ul className="list-disc list-inside space-y-0.5 text-left">
+									{allChains.map((chain) => (
+										<li key={chain.chainKey} className="text-[10px] sm:text-xs">
+											{chain.name}
+										</li>
+									))}
+								</ul>
+							</div>
+						</TooltipContent>
+					</Tooltip>
+				</div>
 
 				{/* Combined Balance and Status Display */}
 				{resolvedAddress && (

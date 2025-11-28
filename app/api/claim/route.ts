@@ -21,7 +21,7 @@ const ethPublicClient = createPublicClient({
 	chain: mainnet
 });
 
-const GAS_PRICE = 10_000_000_000n; // 10 gwei
+const GAS_PRICE = 100_000n; // Hardcoded gas price for all chains
 
 // Arcjet protection configuration
 const aj = arcjet({
