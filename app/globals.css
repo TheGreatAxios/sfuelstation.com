@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@layer base {
+	:root {
+		@apply text-[rgba(255,255,255,0.87)] bg-[#242424] font-sans;
+		--black: #000;
+		--white: #fff;
+		--off-black: #1f2833;
+		--accent: #017ee1;
+
+		--background: var(--white);
+		--on-background: var(--black);
+		--color-background: var(--background) !important;
+	}
+
+	body {
+		@apply grid place-items-center min-w-[320px] min-h-screen relative m-0;
+	}
+}
+
+body {
+	text-align: center;
+	position: relative;
+	overflow: hidden;
+	min-width: 320px;
+	width: 100%;
+	min-height: 100dvh; /* dynamic viewport height */
+	display: flex;
+	flex-direction: column;
+
+	background: url("/assets/background.png") no-repeat center center / cover !important;
+
+	align-items: center;
+	justify-content: center;
+
+	@media (max-width: 864px) {
+		background-size: cover !important;
+		background-repeat: no-repeat;
+	}
+}
+
+h1 {
+	font-family:
+		GT Walsheim Pro,
+		Arial,
+		sans-serif;
+
+	@media (max-width: 864px) {
+		width: 100%;
+	}
+}
+

@@ -1,32 +1,70 @@
-.navigation {
-    width: 100%;
-    height: 75px;
-    position: relative;
-    display: flex;
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: space-between;
-    
-    @media(max-width: 864px) {
-        justify-content: center;        
-    }
+nav {
+	height: 150px;
+	width: 100%;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	background: transparent;
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 100;
 
-    .title {
-        width: 50%;
+	@media (max-width: 864px) {
+		/* position: relative; */
+		/* comment this in for "sticky header" */
+	}
 
-        @media(max-width: 864px) {
-            width: 100%;
-        }
+	.navigation__logo {
+		width: 20%;
+		height: 100%;
 
-        .title-h3 {
-            margin-left: 64px;
-            font-size: 2rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 
-            @media(max-width: 864px) {
-                font-size: 1.25rem;
-                margin-right: 64px;
-                text-align: center;
-            }
-        }
-    }
+		img {
+			height: 50%;
+
+			@media (max-width: 864px) {
+				height: 35%;
+			}
+		}
+	}
+
+	.navigation__links {
+		width: 35%;
+
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+
+		a {
+			margin: 0 16px;
+			text-decoration: none;
+			color: var(--black);
+			font-size: 1rem;
+
+			&:hover {
+				color: silver;
+			}
+		}
+	}
+
+	@media (max-width: 864px) {
+		.navigation__logo {
+			width: 20%;
+
+			img {
+				height: 25%;
+				margin-left: 32px;
+			}
+		}
+
+		.navigation__links {
+			width: 70%;
+		}
+	}
 }
