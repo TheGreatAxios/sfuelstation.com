@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, createWalletClient, http, parseEther, formatEther } from "viem";
+import { nonceManager } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { allChains, getChainKey } from "../../../config";
-import { Redis } from "@upstash/redis";
 import { signerManager } from "../../../utils/signers";
 import { Resend } from "resend";
 
@@ -15,8 +16,6 @@ const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const NOTIFICATION_EMAIL = process.env.NOTIFICATION_EMAIL;
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "noreply@example.com";
-
-const redis = Redis.fromEnv();
 
 export async function GET(request: NextRequest) {
 	const authHeader = request.headers.get('authorization');
@@ -39,101 +38,168 @@ export async function GET(request: NextRequest) {
 		// Check funding wallet balance for all chains
 		const fundingWalletResults = await checkFundingWalletBalances(discordMessages);
 
-		// Process all chains in parallel
-		const chainResults = await Promise.allSettled(
-			allChains.map(async (chain) => {
-				const chainKey = getChainKey(chain);
-				// Use absolute threshold if set, otherwise use 20% of target (0.2 sFUEL)
-				const threshold = THRESHOLD 
-					? parseEther(THRESHOLD)
-					: SIGNER_TARGET_BALANCE * BigInt(20) / BigInt(100); // 20% of 1 sFUEL = 0.2 sFUEL
-				
+		// Calculate threshold once (same for all chains)
+		const threshold = THRESHOLD 
+			? parseEther(THRESHOLD)
+			: SIGNER_TARGET_BALANCE * BigInt(20) / BigInt(100); // 20% of 1 sFUEL = 0.2 sFUEL
+
+		// Batch ALL balance requests across all chains and signers in a single Promise.all
+		type BalanceRequest = {
+			chain: typeof allChains[0];
+			chainKey: string;
+			signerIndex: number;
+			address: string;
+		};
+
+		const balanceRequests: BalanceRequest[] = [];
+		for (const chain of allChains) {
+			const chainKey = getChainKey(chain);
+			const signers = signerManager.getAllSigners(chain);
+			const signerAddresses = signers.map(signer => signer.account.address);
+			
+			for (let i = 0; i < signerAddresses.length; i++) {
+				balanceRequests.push({
+					chain,
+					chainKey,
+					signerIndex: i,
+					address: signerAddresses[i]
+				});
+			}
+		}
+
+		console.log(`Fetching ${balanceRequests.length} balances across ${allChains.length} chains...`);
+
+		// Fetch all balances in parallel
+		const balanceResults = await Promise.allSettled(
+			balanceRequests.map(async ({ chain, address }) => {
 				const publicClient = createPublicClient({
 					transport: http(),
 					chain
 				});
-
-				// Get all signer addresses and their current balances for this chain
-				const signers = signerManager.getAllSigners(chain);
-				const signerAddresses = signers.map(signer => signer.account.address);
-
-				// Get all balances using individual calls (multicall doesn't work for native balance)
-				const balances = await Promise.all(
-					signerAddresses.map(address => publicClient.getBalance({ address: address as `0x${string}`}))
-				);
-
-				const lowBalanceSigners: Array<{
-					index: number;
-					address: string;
-					balance: string;
-					needsTopUp: boolean;
-					error?: string;
-					topUpFailed?: boolean;
-				}> = [];
-				const results = [];
-
-				for (let i = 0; i < signerAddresses.length; i++) {
-					const balance = balances[i];
-					const address = signerAddresses[i];
-
-					console.log(`[${chainKey}] Signer ${i}: ${address} - Balance: ${formatEther(balance)} sFUEL`);
-
-					if (balance < threshold) {
-						const signerInfo: {
-							index: number;
-							address: string;
-							balance: string;
-							needsTopUp: boolean;
-							error?: string;
-							topUpFailed?: boolean;
-						} = {
-							index: i,
-							address,
-							balance: balance.toString(),
-							needsTopUp: true
-						};
-						lowBalanceSigners.push(signerInfo);
-
-						// Top up this signer with error handling
-						try {
-							await topUpSigner(i, address, balance, chain, chainKey);
-							results.push(`Signer ${i} (${address}) - Topped up successfully`);
-						} catch (error: any) {
-							const errorMsg = error?.message || String(error);
-							console.error(`[${chainKey}] Failed to top up signer ${i} (${address}):`, errorMsg);
-							results.push(`Signer ${i} (${address}) - Top-up failed: ${errorMsg}`);
-							// Add error info to signer info
-							signerInfo.error = errorMsg;
-							signerInfo.topUpFailed = true;
-						}
-					} else {
-						results.push(`Signer ${i} (${address}) - Balance OK: ${formatEther(balance)} sFUEL`);
-					}
-				}
-
-				return {
-					chainKey,
-					chainName: chain.name,
-					threshold: threshold.toString(),
-					lowBalanceSigners,
-					results,
-					checked: signerAddresses.length
-				};
+				return await publicClient.getBalance({ address: address as `0x${string}` });
 			})
 		);
 
-		const processedResults = chainResults.map((result: PromiseSettledResult<any>, index: number) => {
+		// Process results and identify signers that need top-up
+		const signersNeedingTopUp: Array<{
+			chain: typeof allChains[0];
+			chainKey: string;
+			signerIndex: number;
+			address: string;
+			balance: bigint;
+		}> = [];
+
+		const chainResults = new Map<string, {
+			chainKey: string;
+			chainName: string;
+			threshold: string;
+			lowBalanceSigners: Array<{
+				index: number;
+				address: string;
+				balance: string;
+				needsTopUp: boolean;
+				error?: string;
+				topUpFailed?: boolean;
+			}>;
+			results: string[];
+			checked: number;
+		}>();
+
+		// Initialize chain results
+		for (const chain of allChains) {
+			const chainKey = getChainKey(chain);
+			chainResults.set(chainKey, {
+				chainKey,
+				chainName: chain.name,
+				threshold: threshold.toString(),
+				lowBalanceSigners: [],
+				results: [],
+				checked: 0
+			});
+		}
+
+		// Process balance results
+		for (let i = 0; i < balanceRequests.length; i++) {
+			const request = balanceRequests[i];
+			const result = balanceResults[i];
+			const chainResult = chainResults.get(request.chainKey)!;
+
 			if (result.status === "fulfilled") {
-				return result.value;
+				const balance = result.value;
+				chainResult.checked++;
+				
+				console.log(`[${request.chainKey}] Signer ${request.signerIndex}: ${request.address} - Balance: ${formatEther(balance)} sFUEL`);
+
+				if (balance < threshold) {
+					const signerInfo = {
+						index: request.signerIndex,
+						address: request.address,
+						balance: balance.toString(),
+						needsTopUp: true
+					};
+					chainResult.lowBalanceSigners.push(signerInfo);
+					signersNeedingTopUp.push({
+						chain: request.chain,
+						chainKey: request.chainKey,
+						signerIndex: request.signerIndex,
+						address: request.address,
+						balance
+					});
+				} else {
+					chainResult.results.push(`Signer ${request.signerIndex} (${request.address}) - Balance OK: ${formatEther(balance)} sFUEL`);
+				}
 			} else {
-				const chain = allChains[index];
-				return {
-					chainKey: chain ? getChainKey(chain) : "unknown",
-					chainName: chain?.name || "Unknown",
-					error: result.reason?.message || "Unknown error"
-				};
+				chainResult.checked++;
+				const errorMsg = result.reason?.message || "Unknown error";
+				console.error(`[${request.chainKey}] Failed to fetch balance for signer ${request.signerIndex} (${request.address}):`, errorMsg);
+				chainResult.results.push(`Signer ${request.signerIndex} (${request.address}) - Balance fetch failed: ${errorMsg}`);
 			}
-		});
+		}
+
+		// Process top-ups sequentially per chain (nonceManager handles nonce incrementing automatically)
+		console.log(`Processing ${signersNeedingTopUp.length} top-ups...`);
+		
+		// Group by chain to process sequentially per chain
+		const topUpsByChain = new Map<string, typeof signersNeedingTopUp>();
+		for (const signer of signersNeedingTopUp) {
+			if (!topUpsByChain.has(signer.chainKey)) {
+				topUpsByChain.set(signer.chainKey, []);
+			}
+			topUpsByChain.get(signer.chainKey)!.push(signer);
+		}
+
+		// Process top-ups per chain (parallel chains, sequential within each chain)
+		await Promise.allSettled(
+			Array.from(topUpsByChain.entries()).map(async ([chainKey, signers]) => {
+				const chain = signers[0].chain;
+				const chainResult = chainResults.get(chainKey)!;
+
+				for (const signer of signers) {
+					const signerInfo = chainResult.lowBalanceSigners.find(
+						s => s.index === signer.signerIndex && s.address === signer.address
+					)!;
+
+					try {
+						await topUpSigner(
+							signer.signerIndex,
+							signer.address,
+							signer.balance,
+							chain,
+							chainKey
+						);
+						chainResult.results.push(`Signer ${signer.signerIndex} (${signer.address}) - Topped up successfully`);
+					} catch (error: any) {
+						const errorMsg = error?.message || String(error);
+						console.error(`[${chainKey}] Failed to top up signer ${signer.signerIndex} (${signer.address}):`, errorMsg);
+						chainResult.results.push(`Signer ${signer.signerIndex} (${signer.address}) - Top-up failed: ${errorMsg}`);
+						signerInfo.error = errorMsg;
+						signerInfo.topUpFailed = true;
+					}
+				}
+			})
+		);
+
+		const processedResults = Array.from(chainResults.values());
 
 		const totalLowBalance = processedResults.reduce((sum: number, r: any) => {
 			if ('lowBalanceSigners' in r) {
@@ -187,8 +253,9 @@ async function topUpSigner(
 	}
 
 	// Create funding wallet client and public client
-	const { privateKeyToAccount } = await import("viem/accounts");
-	const fundingAccount = privateKeyToAccount(FUNDING_WALLET_PRIVATE_KEY as `0x${string}`);
+	const fundingAccount = privateKeyToAccount(FUNDING_WALLET_PRIVATE_KEY as `0x${string}`, {
+		nonceManager
+	});
 	const rpcUrl = chain.rpcUrls.default.http[0];
 	const fundingWallet = createWalletClient({
 		account: fundingAccount,
@@ -227,26 +294,14 @@ async function topUpSigner(
 		throw new Error(errorMsg);
 	}
 
-	// Get nonce for funding wallet on this chain
-	// Fetch actual nonce from chain as source of truth
-	const nonceKey = `nonce:${chainKey}:funding_wallet`;
-	const actualNonce = await publicClient.getTransactionCount({
-		address: fundingAccount.address
-	});
-	const storedNonce = await redis.get<number>(nonceKey);
-	
-	// Use the higher of actual chain nonce or stored nonce to handle any discrepancies
-	// This ensures we never use a nonce lower than what's actually on-chain
-	const nonce = storedNonce !== null && storedNonce > actualNonce ? storedNonce : actualNonce;
+	// NonceManager automatically handles nonce incrementing, so we don't need to specify nonce
+	console.log(`[${chainKey}] Topping up signer ${signerIndex} (${address}) with ${formatEther(amountToSend)} sFUEL`);
 
-	console.log(`[${chainKey}] Topping up signer ${signerIndex} (${address}) with ${formatEther(amountToSend)} sFUEL using nonce ${nonce}`);
-
-	// Send transaction
+	// Send transaction (nonceManager will automatically handle nonce)
 	try {
 		const hash = await fundingWallet.sendTransaction({
 			to: address as `0x${string}`,
 			value: amountToSend,
-			nonce: nonce,
 			gas: gasLimit,
 			gasPrice: gasPrice,
 			chain
@@ -255,13 +310,8 @@ async function topUpSigner(
 		// Wait for transaction receipt
 		const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
-		// Update nonce after successful transaction
-		// Since we process signers sequentially within each chain, this is safe
-		await redis.set(nonceKey, nonce + 1);
-
 		console.log(`[${chainKey}] Successfully topped up signer ${signerIndex} (${address}) with ${formatEther(amountToSend)} sFUEL. Tx: ${hash}`);
 	} catch (error: any) {
-		// If transaction fails, don't update nonce
 		const errorMsg = error?.message || String(error);
 		console.error(`[${chainKey}] Transaction failed for signer ${signerIndex} (${address}):`, errorMsg);
 		throw new Error(`Failed to send transaction: ${errorMsg}`);
@@ -273,7 +323,6 @@ async function checkFundingWalletBalances(discordMessages: string[]) {
 		return;
 	}
 
-	const { privateKeyToAccount } = await import("viem/accounts");
 	const fundingAccount = privateKeyToAccount(FUNDING_WALLET_PRIVATE_KEY as `0x${string}`);
 
 	// Check funding wallet balance for each chain
