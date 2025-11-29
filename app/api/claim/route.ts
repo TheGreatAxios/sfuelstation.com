@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, getAddress, http, isAddress, parseEther, type Address } from "viem";
+import { createPublicClient, getAddress, http, isAddress, parseEther, formatEther, type Address } from "viem";
 import { mainnet } from "viem/chains";
 import { Redis } from "@upstash/redis";
-import { allChains, type ChainConfig } from "../../config";
+import { allChains, getChainKey, DISTRIBUTION_AMOUNT } from "../../config";
 import { signerManager, getNextSignerIndex, getAndIncrementNonce } from "../../utils/signers";
 import arcjet, { detectBot, tokenBucket } from "@arcjet/next";
 import { isSpoofedBot } from "@arcjet/inspect";
@@ -71,6 +71,28 @@ function getIpAddress(request: NextRequest): string | null {
 	return null;
 }
 
+// Helper function to get total amount received by a user on a specific chain
+async function getTotalReceived(address: string, chainKey: string): Promise<bigint> {
+	const key = `claim:total:${chainKey}:${address.toLowerCase()}`;
+	const total = await redis.get<string>(key);
+	if (!total) {
+		return BigInt(0);
+	}
+	try {
+		return BigInt(total);
+	} catch {
+		return BigInt(0);
+	}
+}
+
+// Helper function to update total amount received by a user on a specific chain
+async function updateTotalReceived(address: string, chainKey: string, amount: bigint): Promise<void> {
+	const key = `claim:total:${chainKey}:${address.toLowerCase()}`;
+	const currentTotal = await getTotalReceived(address, chainKey);
+	const newTotal = currentTotal + amount;
+	await redis.set(key, newTotal.toString());
+}
+
 export async function POST(request: NextRequest) {
 	try {
 		const body = await request.json();
@@ -135,29 +157,60 @@ export async function POST(request: NextRequest) {
 
 		// Process all chains in parallel
 		const claimResults = await Promise.all(
-			allChains.map(async (chainConfig) => {
+			allChains.map(async (chain) => {
 				try {
+					const chainKey = getChainKey(chain);
+					// Check if user has already received >= 2x the distribution amount on this chain
+					const distributionAmount = parseEther(DISTRIBUTION_AMOUNT.toString());
+					const maxAllowedAmount = distributionAmount * BigInt(2); // 2x the fill up amount
+					const totalReceived = await getTotalReceived(resolvedAddress, chainKey);
+
+					// If user has already received >= 2x, skip this chain
+					if (totalReceived >= maxAllowedAmount) {
+						return {
+							chainKey,
+							chainName: chain.name,
+							success: false,
+							error: `Maximum claim limit reached (${formatEther(maxAllowedAmount)} sFUEL)`,
+							skipped: true
+						};
+					}
+
+					// Calculate how much we can send (remaining amount up to distributionAmount)
+					const remainingAllowed = maxAllowedAmount - totalReceived;
+					const amountToSend = remainingAllowed < distributionAmount ? remainingAllowed : distributionAmount;
+
+					// If remaining allowed is 0 or negative, skip
+					if (amountToSend <= BigInt(0)) {
+						return {
+							chainKey,
+							chainName: chain.name,
+							success: false,
+							error: `Maximum claim limit reached (${formatEther(maxAllowedAmount)} sFUEL)`,
+							skipped: true
+						};
+					}
+
 					// Get next signer index for this chain (per-chain rotation)
-					const signerIndex = await getNextSignerIndex(redis, chainConfig.chainKey);
-					const wallet = signerManager.getSigner(signerIndex, chainConfig.chain);
+					const signerIndex = await getNextSignerIndex(redis, chainKey);
+					const wallet = signerManager.getSigner(signerIndex, chain);
 
 					// Get and increment nonce for this signer on this chain
-					const nonce = await getAndIncrementNonce(redis, signerIndex, chainConfig.chainKey);
+					const nonce = await getAndIncrementNonce(redis, signerIndex, chainKey);
 
 					// Create public client for this chain
 					// Explicitly use the chain's RPC URL to avoid URL parsing issues
-					const rpcUrl = chainConfig.chain.rpcUrls.default.http[0];
+					const rpcUrl = chain.rpcUrls.default.http[0];
 					const publicClient = createPublicClient({
 						transport: http(rpcUrl),
-						chain: chainConfig.chain
+						chain
 					});
 
-					// Send direct transfer
-					const distributionAmount = parseEther(chainConfig.distributionAmount.toString());
+					// Send direct transfer with calculated amount
 					const hash = await wallet.sendTransaction({
-						chain: chainConfig.chain,
+						chain,
 						to: resolvedAddress,
-						value: distributionAmount,
+						value: amountToSend,
 						gas: BigInt(21_000), // Standard transfer gas limit
 						gasPrice: GAS_PRICE,
 						nonce
@@ -166,17 +219,22 @@ export async function POST(request: NextRequest) {
 					// Wait for transaction receipt
 					await publicClient.waitForTransactionReceipt({ hash });
 
+					// Update total received amount for this user on this chain
+					await updateTotalReceived(resolvedAddress, chainKey, amountToSend);
+
 					return {
-						chainKey: chainConfig.chainKey,
-						chainName: chainConfig.name,
+						chainKey,
+						chainName: chain.name,
 						success: true,
-						hash
+						hash,
+						amountSent: formatEther(amountToSend)
 					};
 				} catch (error: any) {
-					console.error(`Error claiming for ${chainConfig.chainKey}:`, error);
+					const chainKey = getChainKey(chain);
+					console.error(`Error claiming for ${chainKey}:`, error);
 					return {
-						chainKey: chainConfig.chainKey,
-						chainName: chainConfig.name,
+						chainKey,
+						chainName: chain.name,
 						success: false,
 						error: error.message || String(error)
 					};
@@ -185,12 +243,13 @@ export async function POST(request: NextRequest) {
 		);
 
 		const successful = claimResults.filter((r) => r.success).length;
-		const failed = claimResults.filter((r) => !r.success).length;
+		const skipped = claimResults.filter((r) => !r.success && (r as any).skipped).length;
+		const failed = claimResults.filter((r) => !r.success && !(r as any).skipped).length;
 
-		// If all claims failed, return error
+		// If all claims failed (not skipped), return error
 		if (failed === allChains.length) {
 			// Check if it's a user input error (unlikely at this point, but check anyway)
-			const firstError = claimResults.find((r) => !r.success)?.error || "";
+			const firstError = claimResults.find((r) => !r.success && !(r as any).skipped)?.error || "";
 			const isUserInputError = firstError.toLowerCase().includes("invalid") || 
 			                          firstError.toLowerCase().includes("missing") ||
 			                          firstError.toLowerCase().includes("required");
@@ -208,6 +267,7 @@ export async function POST(request: NextRequest) {
 			summary: {
 				total: allChains.length,
 				successful,
+				skipped,
 				failed
 			}
 		});

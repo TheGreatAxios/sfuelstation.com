@@ -1,4 +1,4 @@
-import { allChains, type ChainConfig } from "@/app/config";
+import { allChains, getChainKey, getChainNetwork } from "@/app/config";
 import { createPublicClient, http, type Address, type PublicClient } from "viem";
 import { useEffect, useState } from "react";
 
@@ -29,9 +29,10 @@ export default function BalanceDisplay({
 			const newBalances: Record<string, ChainBalance> = {};
 
 			// Initialize all chains as loading
-			for (const chainConfig of allChains) {
-				newBalances[chainConfig.chainKey] = {
-					chainKey: chainConfig.chainKey,
+			for (const chain of allChains) {
+				const chainKey = getChainKey(chain);
+				newBalances[chainKey] = {
+					chainKey,
 					balance: null,
 					status: "loading"
 				};
@@ -39,11 +40,12 @@ export default function BalanceDisplay({
 			setBalances(newBalances);
 
 			// Fetch balances for all chains in parallel
-			const balancePromises = allChains.map(async (chainConfig) => {
+			const balancePromises = allChains.map(async (chain) => {
+				const chainKey = getChainKey(chain);
 				try {
 					const publicClient = createPublicClient({
 						transport: http(),
-						chain: chainConfig.chain
+						chain
 					});
 
 					const balance = await publicClient.getBalance({
@@ -51,14 +53,14 @@ export default function BalanceDisplay({
 					});
 
 					return {
-						chainKey: chainConfig.chainKey,
+						chainKey,
 						balance,
 						status: "success" as const
 					};
 				} catch (error) {
-					console.error(`Error fetching balance for ${chainConfig.chainKey}:`, error);
+					console.error(`Error fetching balance for ${chainKey}:`, error);
 					return {
-						chainKey: chainConfig.chainKey,
+						chainKey,
 						balance: null,
 						status: "error" as const
 					};
@@ -79,14 +81,15 @@ export default function BalanceDisplay({
 	if (!address) return null;
 
 	// Group chains by network
-	const mainnetChains = allChains.filter((c) => c.network === "mainnet");
-	const testnetChains = allChains.filter((c) => c.network === "testnet");
+	const mainnetChains = allChains.filter((c) => getChainNetwork(c) === "mainnet");
+	const testnetChains = allChains.filter((c) => getChainNetwork(c) === "testnet");
 
-	const renderChainRow = (chainConfig: ChainConfig) => {
-		const chainBalance = balances[chainConfig.chainKey];
+	const renderChainRow = (chain: typeof allChains[0]) => {
+		const chainKey = getChainKey(chain);
+		const chainBalance = balances[chainKey];
 		const balance = chainBalance?.balance ?? null;
 		const balanceStatus = chainBalance?.status ?? "loading";
-		const claimStatus = claimingStatus?.[chainConfig.chainKey] || "idle";
+		const claimStatus = claimingStatus?.[chainKey] || "idle";
 
 		// Get status icon
 		let statusIcon = "";
@@ -105,7 +108,7 @@ export default function BalanceDisplay({
 				: balanceNum.toFixed(5);
 		}
 
-		const chainName = chainConfig.name.replace(" Innovation Hub", "").replace(" DeFi & Liquidity Hub", "").replace(" Gaming Hub", "").replace(" AI Hub", "");
+		const chainName = chain.name.replace(" Innovation Hub", "").replace(" DeFi & Liquidity Hub", "").replace(" Gaming Hub", "").replace(" AI Hub", "");
 		const statusText = claimStatus === "claiming" 
 			? "Claiming in progress" 
 			: claimStatus === "success" 
@@ -115,7 +118,7 @@ export default function BalanceDisplay({
 			: "Not claimed";
 
 		return (
-			<tr key={chainConfig.chainKey} className="border-b border-[black]/10 last:border-0">
+			<tr key={chainKey} className="border-b border-[black]/10 last:border-0">
 				<td className="py-1.5 px-2 text-[10px] sm:text-xs text-[black] font-medium">
 					<span>{chainName}</span>
 				</td>

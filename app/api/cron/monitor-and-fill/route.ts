@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, createWalletClient, http, parseEther, formatEther } from "viem";
-import { allChains } from "../../../config";
+import { allChains, getChainKey } from "../../../config";
 import { Redis } from "@upstash/redis";
 import { signerManager } from "../../../utils/signers";
 import { Resend } from "resend";
@@ -41,8 +41,8 @@ export async function GET(request: NextRequest) {
 
 		// Process all chains in parallel
 		const chainResults = await Promise.allSettled(
-			allChains.map(async (chainConfig) => {
-				const chain = chainConfig.chain;
+			allChains.map(async (chain) => {
+				const chainKey = getChainKey(chain);
 				// Use absolute threshold if set, otherwise use 20% of target (0.2 sFUEL)
 				const threshold = THRESHOLD 
 					? parseEther(THRESHOLD)
@@ -62,33 +62,58 @@ export async function GET(request: NextRequest) {
 					signerAddresses.map(address => publicClient.getBalance({ address: address as `0x${string}`}))
 				);
 
-				const lowBalanceSigners = [];
+				const lowBalanceSigners: Array<{
+					index: number;
+					address: string;
+					balance: string;
+					needsTopUp: boolean;
+					error?: string;
+					topUpFailed?: boolean;
+				}> = [];
 				const results = [];
 
 				for (let i = 0; i < signerAddresses.length; i++) {
 					const balance = balances[i];
 					const address = signerAddresses[i];
 
-					console.log(`[${chainConfig.chainKey}] Signer ${i}: ${address} - Balance: ${balance}`);
+					console.log(`[${chainKey}] Signer ${i}: ${address} - Balance: ${formatEther(balance)} sFUEL`);
 
 					if (balance < threshold) {
-						lowBalanceSigners.push({
+						const signerInfo: {
+							index: number;
+							address: string;
+							balance: string;
+							needsTopUp: boolean;
+							error?: string;
+							topUpFailed?: boolean;
+						} = {
 							index: i,
 							address,
 							balance: balance.toString(),
 							needsTopUp: true
-						});
+						};
+						lowBalanceSigners.push(signerInfo);
 
-						// Top up this signer
-						await topUpSigner(i, address, balance, chain, chainConfig.chainKey);
+						// Top up this signer with error handling
+						try {
+							await topUpSigner(i, address, balance, chain, chainKey);
+							results.push(`Signer ${i} (${address}) - Topped up successfully`);
+						} catch (error: any) {
+							const errorMsg = error?.message || String(error);
+							console.error(`[${chainKey}] Failed to top up signer ${i} (${address}):`, errorMsg);
+							results.push(`Signer ${i} (${address}) - Top-up failed: ${errorMsg}`);
+							// Add error info to signer info
+							signerInfo.error = errorMsg;
+							signerInfo.topUpFailed = true;
+						}
 					} else {
-						results.push(`Signer ${i} (${address}) - Balance OK: ${balance}`);
+						results.push(`Signer ${i} (${address}) - Balance OK: ${formatEther(balance)} sFUEL`);
 					}
 				}
 
 				return {
-					chainKey: chainConfig.chainKey,
-					chainName: chainConfig.name,
+					chainKey,
+					chainName: chain.name,
 					threshold: threshold.toString(),
 					lowBalanceSigners,
 					results,
@@ -97,25 +122,26 @@ export async function GET(request: NextRequest) {
 			})
 		);
 
-		const processedResults = chainResults.map((result, index) => {
+		const processedResults = chainResults.map((result: PromiseSettledResult<any>, index: number) => {
 			if (result.status === "fulfilled") {
 				return result.value;
 			} else {
+				const chain = allChains[index];
 				return {
-					chainKey: allChains[index]?.chainKey || "unknown",
-					chainName: allChains[index]?.name || "Unknown",
+					chainKey: chain ? getChainKey(chain) : "unknown",
+					chainName: chain?.name || "Unknown",
 					error: result.reason?.message || "Unknown error"
 				};
 			}
 		});
 
-		const totalLowBalance = processedResults.reduce((sum, r) => {
+		const totalLowBalance = processedResults.reduce((sum: number, r: any) => {
 			if ('lowBalanceSigners' in r) {
 				return sum + (r.lowBalanceSigners?.length || 0);
 			}
 			return sum;
 		}, 0);
-		const totalChecked = processedResults.reduce((sum, r) => {
+		const totalChecked = processedResults.reduce((sum: number, r: any) => {
 			if ('checked' in r) {
 				return sum + (r.checked || 0);
 			}
@@ -153,7 +179,7 @@ async function topUpSigner(
 	signerIndex: number,
 	address: string,
 	currentBalance: bigint,
-	chain: typeof allChains[0]['chain'],
+	chain: typeof allChains[0],
 	chainKey: string
 ) {
 	if (!FUNDING_WALLET_PRIVATE_KEY) {
@@ -163,14 +189,20 @@ async function topUpSigner(
 	// Create funding wallet client and public client
 	const { privateKeyToAccount } = await import("viem/accounts");
 	const fundingAccount = privateKeyToAccount(FUNDING_WALLET_PRIVATE_KEY as `0x${string}`);
+	const rpcUrl = chain.rpcUrls.default.http[0];
 	const fundingWallet = createWalletClient({
 		account: fundingAccount,
-		transport: http(),
+		transport: http(rpcUrl),
 		chain
 	});
 	const publicClient = createPublicClient({
-		transport: http(),
+		transport: http(rpcUrl),
 		chain
+	});
+
+	// Check funding wallet balance first
+	const fundingBalance = await publicClient.getBalance({
+		address: fundingAccount.address
 	});
 
 	// Calculate amount to send: top up to 1 sFUEL (SIGNER_TARGET_BALANCE)
@@ -178,7 +210,21 @@ async function topUpSigner(
 	const amountToSend = targetBalance - currentBalance;
 
 	if (amountToSend <= BigInt(0)) {
+		console.log(`[${chainKey}] Signer ${signerIndex} (${address}) already at or above target balance`);
 		return; // Already at or above target
+	}
+
+	// Calculate required gas cost
+	const gasLimit = BigInt(21_000);
+	const gasPrice = BigInt(100_000);
+	const gasCost = gasLimit * gasPrice;
+	const totalRequired = amountToSend + gasCost;
+
+	// Check if funding wallet has enough balance
+	if (fundingBalance < totalRequired) {
+		const errorMsg = `Funding wallet balance (${formatEther(fundingBalance)} sFUEL) is insufficient. Required: ${formatEther(totalRequired)} sFUEL (${formatEther(amountToSend)} + ${formatEther(gasCost)} gas)`;
+		console.error(`[${chainKey}] ${errorMsg}`);
+		throw new Error(errorMsg);
 	}
 
 	// Get nonce for funding wallet on this chain
@@ -193,21 +239,33 @@ async function topUpSigner(
 	// This ensures we never use a nonce lower than what's actually on-chain
 	const nonce = storedNonce !== null && storedNonce > actualNonce ? storedNonce : actualNonce;
 
+	console.log(`[${chainKey}] Topping up signer ${signerIndex} (${address}) with ${formatEther(amountToSend)} sFUEL using nonce ${nonce}`);
+
 	// Send transaction
-	await fundingWallet.sendTransaction({
-		to: address as `0x${string}`,
-		value: amountToSend,
-		nonce: nonce,
-		gas: BigInt(21_000),
-		gasPrice: BigInt(100_000),
-		chain
-	});
+	try {
+		const hash = await fundingWallet.sendTransaction({
+			to: address as `0x${string}`,
+			value: amountToSend,
+			nonce: nonce,
+			gas: gasLimit,
+			gasPrice: gasPrice,
+			chain
+		});
 
-	// Update nonce after successful transaction
-	// Since we process signers sequentially within each chain, this is safe
-	await redis.set(nonceKey, nonce + 1);
+		// Wait for transaction receipt
+		const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
-	console.log(`[${chainKey}] Topped up signer ${signerIndex} (${address}) with ${amountToSend} wei using nonce ${nonce}`);
+		// Update nonce after successful transaction
+		// Since we process signers sequentially within each chain, this is safe
+		await redis.set(nonceKey, nonce + 1);
+
+		console.log(`[${chainKey}] Successfully topped up signer ${signerIndex} (${address}) with ${formatEther(amountToSend)} sFUEL. Tx: ${hash}`);
+	} catch (error: any) {
+		// If transaction fails, don't update nonce
+		const errorMsg = error?.message || String(error);
+		console.error(`[${chainKey}] Transaction failed for signer ${signerIndex} (${address}):`, errorMsg);
+		throw new Error(`Failed to send transaction: ${errorMsg}`);
+	}
 }
 
 async function checkFundingWalletBalances(discordMessages: string[]) {
@@ -220,10 +278,11 @@ async function checkFundingWalletBalances(discordMessages: string[]) {
 
 	// Check funding wallet balance for each chain
 	const balanceChecks = await Promise.allSettled(
-		allChains.map(async (chainConfig) => {
+		allChains.map(async (chain) => {
+			const chainKey = getChainKey(chain);
 			const publicClient = createPublicClient({
 				transport: http(),
-				chain: chainConfig.chain
+				chain
 			});
 
 			// Get funding wallet balance
@@ -241,7 +300,7 @@ async function checkFundingWalletBalances(discordMessages: string[]) {
 				const percentage = (Number(fundingBalance) / Number(FUNDING_WALLET_TARGET)) * 100;
 
 				const message = `⚠️ Funding Wallet Balance Alert\n\n` +
-					`Chain: ${chainConfig.name} (${chainConfig.chainKey})\n` +
+					`Chain: ${chain.name} (${chainKey})\n` +
 					`Address: ${fundingAccount.address}\n` +
 					`Current Balance: ${balanceFormatted} sFUEL\n` +
 					`20% Threshold: ${thresholdFormatted} sFUEL\n` +
@@ -249,18 +308,18 @@ async function checkFundingWalletBalances(discordMessages: string[]) {
 					`Target Balance: ${targetFormatted} sFUEL\n\n` +
 					`The funding wallet balance is below 20% of the target balance. Please top up immediately.`;
 
-				console.warn(`[${chainConfig.chainKey}] ${message}`);
+				console.warn(`[${chainKey}] ${message}`);
 
 				// Collect message for Discord (will be sent at the end)
 				discordMessages.push(message);
 
 				// Send email notification immediately
-				await sendEmailNotification(message, fundingAccount.address, balanceFormatted, thresholdFormatted, percentage, chainConfig.name, chainConfig.chainKey);
+				await sendEmailNotification(message, fundingAccount.address, balanceFormatted, thresholdFormatted, percentage, chain.name, chainKey);
 			}
 
 			return {
-				chainKey: chainConfig.chainKey,
-				chainName: chainConfig.name,
+				chainKey,
+				chainName: chain.name,
 				balance: fundingBalance.toString(),
 				threshold: twentyPercentThreshold.toString(),
 				status: fundingBalance < twentyPercentThreshold ? "low" : "ok"
@@ -268,13 +327,14 @@ async function checkFundingWalletBalances(discordMessages: string[]) {
 		})
 	);
 
-	return balanceChecks.map((result, index) => {
+	return balanceChecks.map((result: PromiseSettledResult<any>, index: number) => {
 		if (result.status === "fulfilled") {
 			return result.value;
 		} else {
+			const chain = allChains[index];
 			return {
-				chainKey: allChains[index]?.chainKey || "unknown",
-				chainName: allChains[index]?.name || "Unknown",
+				chainKey: chain ? getChainKey(chain) : "unknown",
+				chainName: chain?.name || "Unknown",
 				error: result.reason?.message || "Unknown error"
 			};
 		}

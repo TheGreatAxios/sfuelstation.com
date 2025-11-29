@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import Image from "next/image";
 import { Footer } from "./components/Footer";
 import { Navigation } from "./components/Navigation";
-import { allChains } from "./config";
+import { allChains, getChainKey } from "./config";
 import BalanceDisplay from "./components/BalanceDisplay";
 import { toast, Toaster } from "sonner";
 import { DebouncedInput } from "./components/DebouncedInput";
@@ -28,8 +28,8 @@ export default function App() {
 
 		// Initialize claiming status for all chains
 		const initialStatus: Record<string, "idle" | "claiming" | "success" | "error"> = {};
-		for (const chainConfig of allChains) {
-			initialStatus[chainConfig.chainKey] = "claiming";
+		for (const chain of allChains) {
+			initialStatus[getChainKey(chain)] = "claiming";
 		}
 		setClaimingStatus(initialStatus);
 
@@ -83,8 +83,8 @@ export default function App() {
 			console.error("Error claiming sFUEL:", error);
 			// Set all to error state
 			const errorStatus: Record<string, "idle" | "claiming" | "success" | "error"> = {};
-			for (const chainConfig of allChains) {
-				errorStatus[chainConfig.chainKey] = "error";
+			for (const chain of allChains) {
+				errorStatus[getChainKey(chain)] = "error";
 			}
 			setClaimingStatus(errorStatus);
 			toast.error(`Failed to claim sFUEL: ${error.message || String(error)}`);
@@ -180,7 +180,7 @@ export default function App() {
 								<p className="font-semibold mb-1.5">All 8 SKALE Chains:</p>
 								<ul className="list-disc list-inside space-y-0.5 text-left">
 									{allChains.map((chain) => (
-										<li key={chain.chainKey} className="text-[10px] sm:text-xs">
+										<li key={getChainKey(chain)} className="text-[10px] sm:text-xs">
 											{chain.name}
 										</li>
 									))}
