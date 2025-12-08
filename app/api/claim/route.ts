@@ -6,7 +6,7 @@ import { allChains, getChainKey, DISTRIBUTION_AMOUNT } from "../../config";
 import { signerManager, getNextSignerIndex, getAndIncrementNonce } from "../../utils/signers";
 import arcjet, { detectBot, tokenBucket } from "@arcjet/next";
 import { isSpoofedBot } from "@arcjet/inspect";
-import ip from "@arcject/ip";
+import ip from "@arcjet/ip";
 
 // Initialize Redis with proper error handling
 let redis: ReturnType<typeof Redis.fromEnv>;
