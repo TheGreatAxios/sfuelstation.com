@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, getAddress, http, isAddress, parseEther, formatEther, type Address } from "viem";
+import { createPublicClient, getAddress, http, isAddress, parseEther, formatEther } from "viem";
 import { mainnet } from "viem/chains";
 import { Redis } from "@upstash/redis";
 import { allChains, getChainKey, DISTRIBUTION_AMOUNT } from "../../config";
 import { signerManager, getNextSignerIndex, getAndIncrementNonce } from "../../utils/signers";
 import arcjet, { detectBot, tokenBucket } from "@arcjet/next";
 import { isSpoofedBot } from "@arcjet/inspect";
+import ip from "@arcject/ip";
 
 // Initialize Redis with proper error handling
 let redis: ReturnType<typeof Redis.fromEnv>;
 try {
 	redis = Redis.fromEnv();
 } catch (error) {
-	console.error("Failed to initialize Redis:", error);
 	throw new Error("Redis configuration is missing. Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables.");
 }
 
@@ -44,45 +44,12 @@ const aj = arcjet({
 	],
 });
 
-// Helper function to extract IP address from request
-// Returns null if IP cannot be determined (Arcjet will handle this)
-function getIpAddress(request: NextRequest): string | null {
-	// Try various headers that might contain the IP
-	const forwarded = request.headers.get("x-forwarded-for");
-	if (forwarded) {
-		// x-forwarded-for can contain multiple IPs, take the first one
-		const ip = forwarded.split(",")[0].trim();
-		if (ip && ip !== "unknown") {
-			return ip;
-		}
-	}
-	
-	const realIp = request.headers.get("x-real-ip");
-	if (realIp && realIp !== "unknown") {
-		return realIp;
-	}
-	
-	const cfConnectingIp = request.headers.get("cf-connecting-ip");
-	if (cfConnectingIp && cfConnectingIp !== "unknown") {
-		return cfConnectingIp;
-	}
-	
-	// Return null if no IP can be determined - Arcjet will skip IP-based rate limiting
-	return null;
-}
-
 // Helper function to get total amount received by a user on a specific chain
 async function getTotalReceived(address: string, chainKey: string): Promise<bigint> {
 	const key = `claim:total:${chainKey}:${address.toLowerCase()}`;
 	const total = await redis.get<string>(key);
-	if (!total) {
-		return BigInt(0);
-	}
-	try {
-		return BigInt(total);
-	} catch {
-		return BigInt(0);
-	}
+
+    return BigInt(total ?? 0);
 }
 
 // Helper function to update total amount received by a user on a specific chain
@@ -120,13 +87,12 @@ export async function POST(request: NextRequest) {
 			resolvedAddress = getAddress(address);
 		}
 
-		// Extract IP address for rate limiting
-		// Use a fallback if IP cannot be determined (Arcjet requires a value)
-		const ip = getIpAddress(request) || "0.0.0.0";
+		// Extract IP address for rate limiting, use Arcject
+		const publicIp = ip(request);
 
 		// Apply Arcjet protection
 		const decision = await aj.protect(request, {
-			ip,
+			ip: publicIp,
 			userId: resolvedAddress, // Use wallet address as userId for rate limiting
 			requested: 1, // Each request consumes 1 token
 		});
